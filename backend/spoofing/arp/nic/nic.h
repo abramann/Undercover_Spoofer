@@ -1,4 +1,3 @@
-
 #pragma once
 #include <ifdef.h>
 #include <ntddndis.h>
@@ -305,14 +304,15 @@ struct mac_
 				PKSTRING instanceName = *(PKSTRING*)(filter + offInstanceName);
 				if (instanceName && MmIsAddressValid(instanceName) && instanceName->Buffer) {
 					size_t length = wcslen(instanceName->Buffer);
-					wchar_t* buffer = (wchar_t*)ExAllocatePoolWithTag(NonPagedPool, length, 'mnml');
+					wchar_t* buffer = (wchar_t*)ExAllocatePool2(POOL_FLAG_NON_PAGED, length, 'mnml');
+
 					if (buffer) {
 						MM_COPY_ADDRESS addr{ 0 };
 						addr.VirtualAddress = instanceName->Buffer;
 						SIZE_T read_size = 0;
 						NTSTATUS status = MmCopyMemory(buffer, addr, length, MM_COPY_MEMORY_VIRTUAL, &read_size);
 						if (status == STATUS_SUCCESS && read_size == length) {
-							wchar_t* memory = (wchar_t*)ExAllocatePoolWithTag(NonPagedPool, length * 2, 'mnml');
+							wchar_t* memory = (wchar_t*)ExAllocatePool2(POOL_FLAG_NON_PAGED, length * 2, 'mnml');
 							if (memory) {
 								RtlStringCbPrintfW(memory, length * 2, oxorany(L"\\Device\\%ws"), paste_guid(buffer, length));
 								UNICODE_STRING adapter;

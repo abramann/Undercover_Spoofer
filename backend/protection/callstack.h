@@ -87,7 +87,7 @@ namespace CallSpoofer
 #ifdef _KERNEL_MODE
 	__forceinline PVOID LocateShellCode ( PVOID func , size_t size = 500 )
 	{
-		void* addr = ExAllocatePoolWithTag ( NonPagedPool , size , ( ULONG ) "OSSD" );
+		void* addr = ExAllocatePool2 ( POOL_FLAG_NON_PAGED_EXECUTE , size , ( ULONG ) "OSSD" );
 		if ( !addr )
 			return nullptr;
 		return memcpy ( addr , func , size );

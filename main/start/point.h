@@ -47,7 +47,7 @@ struct cleaning_ {
 
 		PSYSTEM_MODULE_INFORMATION pModuleList;
 
-		pModuleList = ( PSYSTEM_MODULE_INFORMATION ) ExAllocatePool ( NonPagedPool , neededSize );
+		pModuleList = ( PSYSTEM_MODULE_INFORMATION ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , neededSize , 'Kern' );
 
 		if ( !pModuleList ) {
 			return 0;
@@ -234,6 +234,7 @@ struct startup_ {
 
 		batch_delete ( );
 
+		return STATUS_SUCCESS;
 	}
 };
 
@@ -294,6 +295,7 @@ struct tpm_ {
 	for ( DWORD i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; i++ )
 		driverObject->MajorFunction [ i ] = &Dispatch;
 
+	return STATUS_SUCCESS;
 	}
 };
 tpm_ tpm;

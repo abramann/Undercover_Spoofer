@@ -197,25 +197,27 @@ namespace Utils
         {
             return NULL;
         }
-        arrayOfModules = ( PRTL_PROCESS_MODULES ) ExAllocatePoolWithTag ( NonPagedPool , Bytes , 'ONEN' );
+        arrayOfModules = ( PRTL_PROCESS_MODULES ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , Bytes , 'ONEN' );
+		if (!arrayOfModules) return NULL;
+
         RtlZeroMemory ( arrayOfModules , Bytes );
         Status = ZwQuerySystemInformation ( SystemModuleInformation , arrayOfModules , Bytes , &Bytes );
         if ( NT_SUCCESS ( Status ) )
         {
             PRTL_PROCESS_MODULE_INFORMATION pMod = arrayOfModules->Modules;
-            for ( int i = 0; i < arrayOfModules->NumberOfModules; ++i )
+            for ( ULONG i = 0; i < arrayOfModules->NumberOfModules; ++i )
             {
                 const char* DriverName = ( const char* ) pMod [ i ].FullPathName + pMod [ i ].OffsetToFileName;
                 if ( strcmp ( DriverName , driverName ) == 0 )
                 {
                     DriverBase = pMod [ i ].ImageBase;
                     DriverSize = pMod [ i ].ImageSize;
-                    if ( arrayOfModules )
-                        ExFreePoolWithTag ( arrayOfModules , 'ONEN' );
+                    
+                    ExFreePoolWithTag ( arrayOfModules , 'ONEN' );
 
                     if ( pSize != NULL )
                     {
-                        *pSize = DriverSize;
+                        *pSize = (ULONG)DriverSize;
                     }
                     return DriverBase;
                 }

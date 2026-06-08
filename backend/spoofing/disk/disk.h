@@ -1335,73 +1335,69 @@ NTSTATUS ScSlPassIoc(PDEVICE_OBJECT device, PIRP irp, PVOID context) {
 		kmdf_utils::IOC_REQUEST request = *(kmdf_utils::PIOC_REQUEST)context;
 		ExFreePool(context);
 
+		SCSI_PASS_THROUGH* spt = nullptr;
 		if (!NT_SUCCESS(irp->IoStatus.Status)) goto _spt_end;
 
-		SCSI_PASS_THROUGH* spt = (SCSI_PASS_THROUGH*)request.Buffer;
-		if (MmIsAddressValid(spt) && spt->DataBufferOffset && spt->DataBufferOffset < request.BufferLength) {
-			PVOID dataBuffer = (PBYTE)request.Buffer + spt->DataBufferOffset;
-			if (!MmIsAddressValid(dataBuffer)) goto _spt_end;
-			int dataLen = (int)(request.BufferLength - spt->DataBufferOffset);
+		spt = (SCSI_PASS_THROUGH*)request.Buffer;
+		__try {
+			if (spt && spt->DataBufferOffset && spt->DataBufferOffset < request.BufferLength) {
+				PVOID dataBuffer = (PBYTE)request.Buffer + spt->DataBufferOffset;
+				int dataLen = (int)(request.BufferLength - spt->DataBufferOffset);
 
-			if (spt->Cdb[0] == 0xA1 || spt->Cdb[0] == 0x85) {
-				UCHAR ataCmd = (spt->Cdb[0] == 0xA1) ? spt->Cdb[9] : spt->Cdb[14];
-				if (ataCmd == 0xEC) {
-					ata_identify_device* aid = (ata_identify_device*)dataBuffer;
-					if (MmIsAddressValid(aid)) {
+				if (spt->Cdb[0] == 0xA1 || spt->Cdb[0] == 0x85) {
+					UCHAR ataCmd = (spt->Cdb[0] == 0xA1) ? spt->Cdb[9] : spt->Cdb[14];
+					if (ataCmd == 0xEC) {
+						ata_identify_device* aid = (ata_identify_device*)dataBuffer;
 						FindFakeDiskSerialAta((char*)aid->serial_no);
 						FindFakeDiskModelAta((char*)aid->model, 40);
 					}
-				}
-				else if (ataCmd == 0xB0) {
-					// ATA SMART command
-					UCHAR feature = (spt->Cdb[0] == 0xA1) ? spt->Cdb[3] : spt->Cdb[4];
-					if (feature == 0xD0 && dataLen >= 362) // SMART READ DATA
-						ZeroSmartAttributes(dataBuffer, dataLen);
-				}
-			}
-			else if (spt->Cdb[0] == 0x12 && (spt->Cdb[1] & 0x01)) {
-				UCHAR* vpd = (UCHAR*)dataBuffer;
-				if (spt->Cdb[2] == 0x80) {
-					if (vpd[1] == 0x80 && vpd[3] >= 3) {
-						int slen = vpd[3]; if (slen > 40) slen = 40;
-						FindFakeDiskSerial((char*)&vpd[4], slen);
+					else if (ataCmd == 0xB0) {
+						// ATA SMART command
+						UCHAR feature = (spt->Cdb[0] == 0xA1) ? spt->Cdb[3] : spt->Cdb[4];
+						if (feature == 0xD0 && dataLen >= 362) // SMART READ DATA
+							ZeroSmartAttributes(dataBuffer, dataLen);
 					}
 				}
-				else if (spt->Cdb[2] == 0x83) {
-					SpoofVpd83(vpd, dataLen);
-				}
-				else if (spt->Cdb[2] == 0x89) {
-					// VPD 0x89: ATA Information — IDENTIFY data at offset 60
-					if (dataLen >= 60 + 512) {
-						ata_identify_device* aid = (ata_identify_device*)(vpd + 60);
-						if (MmIsAddressValid(aid)) {
+				else if (spt->Cdb[0] == 0x12 && (spt->Cdb[1] & 0x01)) {
+					UCHAR* vpd = (UCHAR*)dataBuffer;
+					if (spt->Cdb[2] == 0x80) {
+						if (vpd[1] == 0x80 && vpd[3] >= 3) {
+							int slen = vpd[3]; if (slen > 40) slen = 40;
+							FindFakeDiskSerial((char*)&vpd[4], slen);
+						}
+					}
+					else if (spt->Cdb[2] == 0x83) {
+						SpoofVpd83(vpd, dataLen);
+					}
+					else if (spt->Cdb[2] == 0x89) {
+						// VPD 0x89: ATA Information — IDENTIFY data at offset 60
+						if (dataLen >= 60 + 512) {
+							ata_identify_device* aid = (ata_identify_device*)(vpd + 60);
 							FindFakeDiskSerialAta((char*)aid->serial_no);
 							FindFakeDiskModelAta((char*)aid->model, 40);
 						}
 					}
 				}
-			}
-			else if (spt->Cdb[0] == 0x12 && !(spt->Cdb[1] & 0x01)) {
-				SpoofStandardInquiry((UCHAR*)dataBuffer, dataLen);
-			}
-			else if (spt->Cdb[0] == 0xE4 || spt->Cdb[0] == 0xE6) {
-				NVME_IDENTIFY_DEVICE* nvmeIdentify = (NVME_IDENTIFY_DEVICE*)dataBuffer;
-				if (MmIsAddressValid(nvmeIdentify)) {
+				else if (spt->Cdb[0] == 0x12 && !(spt->Cdb[1] & 0x01)) {
+					SpoofStandardInquiry((UCHAR*)dataBuffer, dataLen);
+				}
+				else if (spt->Cdb[0] == 0xE4 || spt->Cdb[0] == 0xE6) {
+					NVME_IDENTIFY_DEVICE* nvmeIdentify = (NVME_IDENTIFY_DEVICE*)dataBuffer;
 					char serialBuf[21] = { 0 };
 					RtlCopyMemory(serialBuf, nvmeIdentify->SerialNumber, 20);
 					FindFakeDiskSerial(serialBuf);
 					RtlCopyMemory(nvmeIdentify->SerialNumber, serialBuf, 20);
 					FindFakeDiskModel(nvmeIdentify->Model, 40);
 				}
-			}
-			else {
-				PCHAR serial = (PCHAR)dataBuffer + 4;
-				if (MmIsAddressValid(serial)) {
+				else {
+					PCHAR serial = (PCHAR)dataBuffer + 4;
 					size_t length = strlen(serial);
 					if (length >= 5 && length <= 40)
 						FindFakeDiskSerial(serial, (int)length);
 				}
 			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
 		}
 
 	_spt_end:
@@ -1877,9 +1873,10 @@ NTSTATUS ScSlPassIocEX(PDEVICE_OBJECT device, PIRP irp, PVOID context) {
 		kmdf_utils::IOC_REQUEST request = *(kmdf_utils::PIOC_REQUEST)context;
 		ExFreePool(context);
 
+		SCSI_PASS_THROUGH_EX* spte = nullptr;
 		if (!NT_SUCCESS(irp->IoStatus.Status)) goto _sptex_end;
 
-		SCSI_PASS_THROUGH_EX* spte = (SCSI_PASS_THROUGH_EX*)request.Buffer;
+		spte = (SCSI_PASS_THROUGH_EX*)request.Buffer;
 		if (MmIsAddressValid(spte) && spte->DataInBufferOffset && spte->DataInBufferOffset < request.BufferLength) {
 			PVOID dataBuffer = (PBYTE)request.Buffer + spte->DataInBufferOffset;
 			if (!MmIsAddressValid(dataBuffer)) goto _sptex_end;
@@ -2943,7 +2940,7 @@ NTSTATUS NtfsVolumeInfoHandle(PDEVICE_OBJECT device, PIRP irp) {
 	if (ioc && ioc->Parameters.QueryVolume.FsInformationClass == FileFsVolumeInformation) {
 		// Manual IOC_REQUEST setup — change_ioc reads DeviceIoControl.OutputBufferLength
 		// which is wrong for IRP_MJ_QUERY_VOLUME_INFORMATION
-		auto* req = (kmdf_utils::PIOC_REQUEST)ExAllocatePool(NonPagedPool, sizeof(kmdf_utils::IOC_REQUEST));
+		auto* req = (kmdf_utils::PIOC_REQUEST)ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(kmdf_utils::IOC_REQUEST), 'Util');
 		if (req) {
 			req->Buffer = irp->AssociatedIrp.SystemBuffer;
 			req->BufferLength = ioc->Parameters.QueryVolume.Length;
@@ -2968,7 +2965,7 @@ static KEY_VALUE_PARTIAL_INFORMATION* RegReadVal(HANDLE hKey, const wchar_t* nam
 	ULONG resultLen = 0;
 	NTSTATUS st = ZwQueryValueKey(hKey, &uName, KeyValuePartialInformation, NULL, 0, &resultLen);
 	if (st != STATUS_BUFFER_TOO_SMALL || resultLen == 0) return nullptr;
-	auto* p = (KEY_VALUE_PARTIAL_INFORMATION*)ExAllocatePoolWithTag(NonPagedPool, resultLen, 'RegR');
+	auto* p = (KEY_VALUE_PARTIAL_INFORMATION*)ExAllocatePool2(POOL_FLAG_NON_PAGED, resultLen, 'RegR');
 	if (!p) return nullptr;
 	st = ZwQueryValueKey(hKey, &uName, KeyValuePartialInformation, p, resultLen, &resultLen);
 	if (!NT_SUCCESS(st)) { ExFreePoolWithTag(p, 'RegR'); return nullptr; }
@@ -3859,7 +3856,7 @@ static void CreateSpoofedVolumeSymlinks() {
 	// Build IOCTL_MOUNTMGR_QUERY_POINTS with empty input (returns all)
 	MOUNTMGR_MOUNT_POINT input = { 0 };
 	ULONG outSize = 4096;
-	PMOUNTMGR_MOUNT_POINTS output = (PMOUNTMGR_MOUNT_POINTS)ExAllocatePoolWithTag(NonPagedPool, outSize, 'VlSp');
+	PMOUNTMGR_MOUNT_POINTS output = (PMOUNTMGR_MOUNT_POINTS)ExAllocatePool2(POOL_FLAG_NON_PAGED, outSize, 'VlSp');
 	if (!output) { ObDereferenceObject(fileObj); return; }
 
 	KEVENT event;
@@ -3878,7 +3875,7 @@ static void CreateSpoofedVolumeSymlinks() {
 	if (iosb.Status == STATUS_BUFFER_OVERFLOW && output->Size > outSize) {
 		outSize = output->Size;
 		ExFreePoolWithTag(output, 'VlSp');
-		output = (PMOUNTMGR_MOUNT_POINTS)ExAllocatePoolWithTag(NonPagedPool, outSize, 'VlSp');
+		output = (PMOUNTMGR_MOUNT_POINTS)ExAllocatePool2(POOL_FLAG_NON_PAGED, outSize, 'VlSp');
 		if (!output) { ObDereferenceObject(fileObj); return; }
 		KeInitializeEvent(&event, NotificationEvent, FALSE);
 		RtlZeroMemory(&iosb, sizeof(iosb));

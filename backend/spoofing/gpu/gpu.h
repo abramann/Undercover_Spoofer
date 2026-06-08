@@ -4,6 +4,9 @@
 
 #pragma warning(error : 4024)  // Make mismatch an error
 
+#undef DebugPrint
+#define DebugPrint(fmt, ...) DbgPrintEx(0, 0, fmt, ##__VA_ARGS__)
+
 #define DBG_PREFIX oxorany("[KDW11S] ")
 
 

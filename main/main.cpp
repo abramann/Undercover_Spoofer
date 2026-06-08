@@ -1,5 +1,6 @@
 #include "start/point.h"
 
+
 inline bool admin = true;
 
 typedef struct _SWAP {
@@ -44,7 +45,7 @@ NTSTATUS SwapControl(UNICODE_STRING driver, NTSTATUS(*hook)(PDEVICE_OBJECT devic
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS DriverEntry ( PDRIVER_OBJECT DriverObject , PUNICODE_STRING Driverregistry )
+extern "C" NTSTATUS DriverEntry ( PDRIVER_OBJECT DriverObject , PUNICODE_STRING Driverregistry )
 {
 	UNREFERENCED_PARAMETER ( DriverObject );
 	UNREFERENCED_PARAMETER ( Driverregistry );

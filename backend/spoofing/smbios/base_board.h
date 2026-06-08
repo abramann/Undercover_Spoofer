@@ -45,7 +45,7 @@ void RandomizeStringa ( char* string )
 
 	const auto length = static_cast< int >( strlen ( string ) );
 
-	auto* buffer = static_cast< char* >( ExAllocatePoolWithTag ( NonPagedPool , length + 1 , POOL_TAG ) );
+	auto* buffer = static_cast< char* >( ExAllocatePool2 ( POOL_FLAG_NON_PAGED , length + 1 , POOL_TAG ) );
 	if ( !buffer )
 		return;
 
@@ -160,7 +160,7 @@ char* GetUInt32 ( SMBIOS_HEADER* header , UINT32& value )
 
 
 void RandomText ( char* text , const int length ) {
-	if ( !text )
+	if ( !text || length <= 0 )
 		return;
 
 	static const char alphanum [ ] = "0123456789ABCDEF";
@@ -169,8 +169,6 @@ void RandomText ( char* text , const int length ) {
 		int key = smbios_rand ( ) % ( sizeof ( alphanum ) - 1 );
 		text [ n ] = alphanum [ key ];
 	}
-
-	text [ length ] = '\0';
 }
 
 
@@ -178,7 +176,7 @@ void RandomText ( char* text , const int length ) {
 
 void RandomizeString(char* string)
 {
-	if (string == NULL) { // fixed comparison
+	if (string == NULL) { 
 		return;
 	}
 
@@ -188,11 +186,7 @@ void RandomizeString(char* string)
 	}
 
 	auto* buffer = static_cast<char*>(
-		SPOOF_CALL(PVOID __stdcall, ExAllocatePoolWithTag)(
-			NonPagedPool,
-			length,
-			'mnml'
-			)
+		ExAllocatePool2(POOL_FLAG_NON_PAGED, length, 'mnml')
 		);
 
 	if (!buffer) {
@@ -288,7 +282,7 @@ void spoof_boot_uuid ( )
 
 	PSYSTEM_BOOT_ENVIRONMENT_INFORMATION pBootInfo;
 
-	if ( pBootInfo = ( decltype( pBootInfo ) ) ExAllocatePoolWithTag ( NonPagedPool , neededSize , POOL_TAG ) ) {
+	if ( pBootInfo = ( decltype( pBootInfo ) ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , neededSize , POOL_TAG ) ) {
 
 		NTSTATUS r;
 		SystemBootEnvironmentInformation;
@@ -982,8 +976,8 @@ NTSTATUS GenerateRandomKey ( TPM2B_PUBLIC_KEY_RSA* inputKey )
 	if ( !NT_SUCCESS ( status ) )
 		goto Cleanup;
 
-	keyBlob = ( PUCHAR ) ExAllocatePoolWithTag (
-		NonPagedPool ,
+	keyBlob = ( PUCHAR ) ExAllocatePool2 (
+		POOL_FLAG_NON_PAGED ,
 		keyBlobLength ,
 		'kpyR'
 	);

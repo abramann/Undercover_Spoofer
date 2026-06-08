@@ -18,7 +18,7 @@ namespace kmdf_utils
 		if ( need_size == 0 ) return false;
 
 		const unsigned long tag = 'Util';
-		PSYSTEM_MODULE_INFORMATION sys_mods = ( PSYSTEM_MODULE_INFORMATION ) ExAllocatePoolWithTag ( NonPagedPool , need_size , tag );
+		PSYSTEM_MODULE_INFORMATION sys_mods = ( PSYSTEM_MODULE_INFORMATION ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , need_size , tag );
 		if ( sys_mods == 0 ) return false;
 
 		NTSTATUS status = ZwQuerySystemInformation ( 11 , sys_mods , need_size , 0 );
@@ -143,7 +143,7 @@ namespace kmdf_utils
 		if ( status != STATUS_INFO_LENGTH_MISMATCH )
 			return nullptr;
 
-		auto* moduleList = static_cast< PSYSTEM_MODULE_INFORMATION >( SPOOF_CALL ( PVOID __stdcall , ExAllocatePoolWithTag )( NonPagedPool , ( size * 2 ) , 'MNML' ) );
+		auto* moduleList = static_cast< PSYSTEM_MODULE_INFORMATION >( SPOOF_CALL ( PVOID __stdcall , ExAllocatePool2 )( POOL_FLAG_NON_PAGED , ( size * 2 ) , 'MNML' ) );
 		if ( !moduleList )
 			return nullptr;
 
@@ -175,7 +175,7 @@ namespace kmdf_utils
 		if ( status != STATUS_INFO_LENGTH_MISMATCH )
 			return 0;
 
-		auto* moduleList = static_cast< PSYSTEM_MODULE_INFORMATION >( SPOOF_CALL ( PVOID __stdcall , ExAllocatePoolWithTag )( NonPagedPool , ( size * 2 ) , 'MNML' ) );
+		auto* moduleList = static_cast< PSYSTEM_MODULE_INFORMATION >( SPOOF_CALL ( PVOID __stdcall , ExAllocatePool2 )( POOL_FLAG_NON_PAGED , ( size * 2 ) , 'MNML' ) );
 		if ( !moduleList )
 			return 0;
 
@@ -252,17 +252,13 @@ namespace kmdf_utils
 
 	bool change_ioc ( PIO_STACK_LOCATION ioc , PIRP irp , PIO_COMPLETION_ROUTINE routine )
 	{
-		PIOC_REQUEST request = ( PIOC_REQUEST ) ExAllocatePool ( NonPagedPool , sizeof ( IOC_REQUEST ) );
+		PIOC_REQUEST request = ( PIOC_REQUEST ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , sizeof ( IOC_REQUEST ) , 'Util' );
 		if ( request == 0 ) return false;
 
 		request->Buffer = irp->AssociatedIrp.SystemBuffer;
 		request->BufferLength = ioc->Parameters.DeviceIoControl.OutputBufferLength;
 		request->OldContext = ioc->Context;
 
-		// Only save the old completion routine if it was actually active
-		// (Control flags indicate it should be invoked). Otherwise the
-		// CompletionRoutine pointer may be stale/garbage and calling it
-		// causes MULTIPLE_IRP_COMPLETE_REQUESTS (bugcheck 0x44).
 		if ( ioc->Control & ( SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR | SL_INVOKE_ON_CANCEL ) )
 			request->OldRoutine = ioc->CompletionRoutine;
 		else
@@ -270,7 +266,6 @@ namespace kmdf_utils
 
 		request->DataMdl = nullptr;
 
-		// Invoke on all outcomes so we always free IOC_REQUEST and DataMdl
 		ioc->Control = SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR | SL_INVOKE_ON_CANCEL;
 		ioc->Context = request;
 		ioc->CompletionRoutine = routine;
@@ -300,7 +295,7 @@ namespace kmdf_utils
 		ULONG bufferSize = 0x1000;
 		ULONG index = 0;
 
-		buffer = ExAllocatePoolWithTag ( PagedPool , bufferSize , 'kTag' );
+		buffer = ExAllocatePool2 ( POOL_FLAG_PAGED , bufferSize , 'kTag' );
 		if ( buffer == NULL ) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
@@ -342,7 +337,7 @@ namespace kmdf_utils
 		ULONG bufferSize = 0x1000;
 		ULONG index = 0;
 
-		buffer = ExAllocatePoolWithTag ( PagedPool , bufferSize , 'kTag' );
+		buffer = ExAllocatePool2 ( POOL_FLAG_PAGED , bufferSize , 'kTag' );
 		if ( buffer == NULL ) {
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
@@ -363,7 +358,7 @@ namespace kmdf_utils
 			UNICODE_STRING subKeyPath;
 			subKeyPath.Length = keyInfo->NameLength;
 			subKeyPath.MaximumLength = keyInfo->NameLength + sizeof ( WCHAR );
-			subKeyPath.Buffer = ( PWCHAR ) ExAllocatePoolWithTag ( PagedPool , subKeyPath.MaximumLength , 'kTag' );
+			subKeyPath.Buffer = ( PWCHAR ) ExAllocatePool2 ( POOL_FLAG_PAGED , subKeyPath.MaximumLength , 'kTag' );
 			if ( subKeyPath.Buffer == NULL ) {
 				ExFreePoolWithTag ( buffer , 'kTag' );
 				return STATUS_INSUFFICIENT_RESOURCES;
@@ -375,14 +370,11 @@ namespace kmdf_utils
 			OBJECT_ATTRIBUTES objectAttributes;
 			HANDLE subKeyHandle;
 			InitializeObjectAttributes ( &objectAttributes , &subKeyPath , OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE , KeyHandle , NULL );
-			//Utils::ChadPrint("Attempting to open subkey: %wZ\n", &subKeyPath);
 
 			status = ZwOpenKey ( &subKeyHandle , KEY_ALL_ACCESS , &objectAttributes );
 			if ( NT_SUCCESS ( status ) ) {
 				status = DeleteRegistryKeyRecursively ( subKeyHandle );
 				ZwClose ( subKeyHandle );
-			}
-			else {
 			}
 
 			ExFreePoolWithTag ( subKeyPath.Buffer , 'kTag' );
@@ -399,11 +391,6 @@ namespace kmdf_utils
 		}
 
 		status = ZwDeleteKey ( KeyHandle );
-		if ( !NT_SUCCESS ( status ) ) {
-		}
-		else {
-		}
-
 		ExFreePoolWithTag ( buffer , 'kTag' );
 		return status;
 	}
@@ -479,13 +466,17 @@ namespace kmdf_communication
 			ULONG KeyInfoSize = GetKeyInfoSize ( hKey , &Key );
 			ULONG KeyInfoSizeNeeded;
 
-			if ( KeyInfoSize == NULL )
+			if ( KeyInfoSize == 0 )
 			{
 				ZwClose ( hKey );
 				return 0;
 			}
 
-			PKEY_VALUE_FULL_INFORMATION pKeyInfo = ( PKEY_VALUE_FULL_INFORMATION ) ExAllocatePool ( NonPagedPool , KeyInfoSize );
+			PKEY_VALUE_FULL_INFORMATION pKeyInfo = ( PKEY_VALUE_FULL_INFORMATION ) ExAllocatePool2 ( POOL_FLAG_NON_PAGED , KeyInfoSize , 'Util' );
+			if ( !pKeyInfo ) {
+				ZwClose ( hKey );
+				return 0;
+			}
 			RtlZeroMemory ( pKeyInfo , KeyInfoSize );
 
 			Status = ZwQueryValueKey ( hKey , &Key , KeyValueFullInformation , pKeyInfo , KeyInfoSize , &KeyInfoSizeNeeded );
@@ -493,14 +484,15 @@ namespace kmdf_communication
 			if ( !NT_SUCCESS ( Status ) || ( KeyInfoSize != KeyInfoSizeNeeded ) )
 			{
 				ZwClose ( hKey );
-				ExFreePoolWithTag ( pKeyInfo , 0 );
+				ExFreePoolWithTag ( pKeyInfo , 'Util' );
 				return 0;
 			}
 
+			type result = *( type* ) ( ( LONG64 ) pKeyInfo + pKeyInfo->DataOffset );
 			ZwClose ( hKey );
-			ExFreePoolWithTag ( pKeyInfo , 0 );
+			ExFreePoolWithTag ( pKeyInfo , 'Util' );
 
-			return *( type* ) ( ( LONG64 ) pKeyInfo + pKeyInfo->DataOffset );
+			return result;
 		}
 
 		return 0;
